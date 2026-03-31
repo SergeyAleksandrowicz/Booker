@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = 'http://localhost:3000/api';
+const BASE_URL = 'http://localhost:4000/api';
 
 // Test user credentials
 const testEmail = `test_${Date.now()}@example.com`;

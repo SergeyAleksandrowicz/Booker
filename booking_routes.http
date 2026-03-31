@@ -2,7 +2,7 @@
 ### Use with REST Client extension in VS Code
 
 ### Variables
-@baseUrl = http://localhost:3000/api
+@baseUrl = http://localhost:4000/api
 @email = testuser@example.com
 @password = Password123!
 @accessToken = your_access_token_here
