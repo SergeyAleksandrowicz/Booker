@@ -1,0 +1,145 @@
+### Booking Routes Test File
+### Use with REST Client extension in VS Code
+
+### Variables
+@baseUrl = http://localhost:3000/api
+@email = testuser@example.com
+@password = Password123!
+@accessToken = your_access_token_here
+@bookingId = 1
+@serviceId = 1
+@availabilityId = 1
+
+###############################################################################
+# STEP 1: AUTHENTICATION - Register and Login
+###############################################################################
+
+### Register a new test user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "passwordConfirm": "{{password}}"
+}
+
+### Login to get access token
+### Copy the accessToken from response and update @accessToken variable above
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+###############################################################################
+# STEP 2: BROWSE AVAILABLE SERVICES (Public - No Auth Required)
+###############################################################################
+
+### List all active services
+GET {{baseUrl}}/services
+
+### Get specific service details
+GET {{baseUrl}}/services/{{serviceId}}
+
+### Get availability slots for a specific service
+GET {{baseUrl}}/services/{{serviceId}}/availability
+
+### Get availability slots with from date filter
+GET {{baseUrl}}/services/{{serviceId}}/availability?fromDate=2024-01-15
+
+### Get availability by date range
+GET {{baseUrl}}/services/{{serviceId}}/availability/dates/2024-01-15/2024-01-20
+
+###############################################################################
+# STEP 3: CREATE BOOKING (Protected - Requires Auth Token)
+###############################################################################
+
+### Create a new booking
+### Update @availabilityId with an ID from the GET availability response above
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "availabilityId": {{availabilityId}},
+  "notes": "Looking forward to this appointment!"
+}
+
+###############################################################################
+# STEP 4: VIEW BOOKINGS (Protected - Requires Auth Token)
+###############################################################################
+
+### Get all bookings for current user
+### Copy a booking ID from the response and update @bookingId variable above
+GET {{baseUrl}}/bookings
+Authorization: Bearer {{accessToken}}
+
+### Get specific booking details
+GET {{baseUrl}}/bookings/{{bookingId}}
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# STEP 5: UPDATE BOOKING (Protected - Requires Auth Token)
+###############################################################################
+
+### Update booking status to confirmed
+PATCH {{baseUrl}}/bookings/{{bookingId}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "status": "confirmed"
+}
+
+### Update booking notes
+PATCH {{baseUrl}}/bookings/{{bookingId}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "notes": "Updated notes: I will be 10 minutes early"
+}
+
+### Mark booking as completed
+PATCH {{baseUrl}}/bookings/{{bookingId}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "status": "completed"
+}
+
+### Update both status and notes
+PATCH {{baseUrl}}/bookings/{{bookingId}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "status": "confirmed",
+  "notes": "Confirmed for tomorrow at 2 PM"
+}
+
+###############################################################################
+# STEP 6: CANCEL BOOKING (Protected - Requires Auth Token)
+###############################################################################
+
+### Cancel a booking
+DELETE {{baseUrl}}/bookings/{{bookingId}}
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# REFERENCE: BOOKING STATUS FLOW
+###############################################################################
+# When a booking is created, it starts with status: "pending"
+#
+# Valid status transitions:
+# - pending → confirmed (user confirms)
+# - pending → cancelled (user cancels)
+# - confirmed → completed (after service is done)
+# - confirmed → cancelled (user cancels)
+# - pending → completed (service completed without explicit confirmation)
+#
+# Cancelling a booking restores the availability slot

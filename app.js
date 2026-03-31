@@ -5,6 +5,8 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
 const protectedRoutes = require('./routes/protected');
+const servicesRoutes = require('./routes/services');
+const bookingRoutes = require('./routes/bookings');
 
 const app = express();
 
@@ -50,6 +52,12 @@ app.get('/', (req, res) => {
 
 // Auth routes (register, login, refresh)
 app.use('/api/auth', authRoutes);
+
+// Public service routes (browse services and availability)
+app.use('/api/services', servicesRoutes);
+
+// Protected booking routes (require authentication)
+app.use('/api/bookings', bookingRoutes);
 
 // Protected routes (require authentication)
 app.use('/api/protected', protectedRoutes);
