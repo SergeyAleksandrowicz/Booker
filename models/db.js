@@ -7,9 +7,10 @@ require('dotenv').config();
 const getDialectOptions = () => {
   const options = {};
   if (process.env.NODE_ENV === 'production' || process.env.PGSSL === 'true') {
+    const rejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED === 'true';
     options.ssl = {
       require: true,
-      rejectUnauthorized: true,
+      rejectUnauthorized,
     };
   }
   return options;
