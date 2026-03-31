@@ -143,7 +143,6 @@ router.post(
       res.status(500).json({
         success: false,
         message: 'Failed to create booking',
-        error: error.message,
       });
     }
   }
@@ -170,7 +169,6 @@ router.get('/', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch bookings',
-      error: error.message,
     });
   }
 });
@@ -218,7 +216,6 @@ router.get('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch booking',
-      error: error.message,
     });
   }
 });
@@ -308,7 +305,6 @@ router.patch(
       res.status(500).json({
         success: false,
         message: 'Failed to update booking',
-        error: error.message,
       });
     }
   }
@@ -399,7 +395,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to cancel booking',
-      error: error.message,
     });
   }
 });

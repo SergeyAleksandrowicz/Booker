@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const http = require('http');
 const app = require('./app');
+const sequelize = require('./models/db');
 
 const PORT = Number(process.env.PORT || 3000);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -24,9 +25,22 @@ if (missingEnvVars.length > 0) {
 
 const server = http.createServer(app);
 
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+// Verify database connection before starting server
+async function startServer() {
+    try {
+        await sequelize.authenticate();
+        console.log('Database connection verified.');
+    } catch (error) {
+        console.error('Database connection failed:', error.message);
+        process.exit(1);
+    }
+
+    server.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}
+
+startServer();
 
 server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {

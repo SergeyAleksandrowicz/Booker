@@ -26,7 +26,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch services',
-      error: error.message,
     });
   }
 });
@@ -65,7 +64,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch service',
-      error: error.message,
     });
   }
 });
@@ -116,7 +114,6 @@ router.get('/:serviceId/availability', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch availability',
-      error: error.message,
     });
   }
 });
@@ -187,7 +184,6 @@ router.get('/:serviceId/availability/dates/:startDate/:endDate', async (req, res
     res.status(500).json({
       success: false,
       message: 'Failed to fetch calendar availability',
-      error: error.message,
     });
   }
 });
