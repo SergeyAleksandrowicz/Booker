@@ -1,21 +1,8 @@
 const { Sequelize, DataTypes, Model } = require('sequelize');
-require('dotenv').config();
-
-// Initialize Sequelize using environment variables
-const sequelize = new Sequelize(
-  process.env.PGDATABASE,
-  process.env.PGUSER,
-  process.env.PGPASSWORD,
-  {
-    host: process.env.PGHOST || 'localhost',
-    port: process.env.PGPORT || 5432,
-    dialect: 'postgres',
-    logging: false,
-  }
-);
-
+const sequelize = require('./db');
 const { User } = require('./user');
 const { Availability } = require('./availability');
+const { Service } = require('./service');
 
 // Define the Booking model
 class Booking extends Model {}
@@ -85,10 +72,10 @@ async function getBookingsByUserId(userId) {
       include: [
         {
           model: Availability,
-          attributes: ['id', 'date', 'startTime', 'endTime'],
+          attributes: ['id', 'date', 'startTime', 'endTime', 'serviceId'],
           include: [
             {
-              model: 'Service',
+              model: Service,
               attributes: ['id', 'name', 'duration', 'price'],
             },
           ],
@@ -114,10 +101,10 @@ async function getBookingById(id) {
         },
         {
           model: Availability,
-          attributes: ['id', 'date', 'startTime', 'endTime'],
+          attributes: ['id', 'date', 'startTime', 'endTime', 'serviceId'],
           include: [
             {
-              model: 'Service',
+              model: Service,
               attributes: ['id', 'name', 'duration', 'price'],
             },
           ],
@@ -232,10 +219,10 @@ async function getUserBookingsByDateRange(userId, startDate, endDate) {
               [Sequelize.Op.between]: [startDate, endDate],
             },
           },
-          attributes: ['id', 'date', 'startTime', 'endTime'],
+          attributes: ['id', 'date', 'startTime', 'endTime', 'serviceId'],
           include: [
             {
-              model: 'Service',
+              model: Service,
               attributes: ['id', 'name', 'duration', 'price'],
             },
           ],
@@ -249,7 +236,6 @@ async function getUserBookingsByDateRange(userId, startDate, endDate) {
 }
 
 module.exports = {
-  sequelize,
   Booking,
   createBooking,
   getBookingsByUserId,

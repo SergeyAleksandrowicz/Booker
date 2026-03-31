@@ -1,18 +1,5 @@
-const { Sequelize, DataTypes, Model } = require('sequelize');
-require('dotenv').config();
-
-// Initialize Sequelize using environment variables
-const sequelize = new Sequelize(
-  process.env.PGDATABASE,
-  process.env.PGUSER,
-  process.env.PGPASSWORD,
-  {
-    host: process.env.PGHOST || 'localhost',
-    port: process.env.PGPORT || 5432,
-    dialect: 'postgres',
-    logging: false,
-  }
-);
+const { DataTypes, Model } = require('sequelize');
+const sequelize = require('./db');
 
 // Define the Service model
 class Service extends Model {}
@@ -129,7 +116,6 @@ async function deleteService(id) {
 }
 
 module.exports = {
-  sequelize,
   Service,
   createService,
   getAllActiveServices,
