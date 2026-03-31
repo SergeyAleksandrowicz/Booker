@@ -1,0 +1,33 @@
+### Variables
+@baseUrl = http://localhost:4000
+
+### Register a new user
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "Password123",
+  "passwordConfirm": "Password123"
+}
+
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "Password123"
+}
+
+### Get Profile (Requires Token - update with your accessToken)
+GET {{baseUrl}}/api/protected/profile
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+### Refresh Token
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
