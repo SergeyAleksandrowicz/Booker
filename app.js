@@ -11,6 +11,9 @@ const { authLimiter, bookingLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 
+// Trust proxy - fixes IP detection behind reverse proxies/load balancers
+app.set('trust proxy', process.env.TRUST_PROXY || 1);
+
 // ============================================================================
 // SECURITY MIDDLEWARE
 // ============================================================================
