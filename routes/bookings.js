@@ -1,16 +1,17 @@
 const express = require('express');
+const { Op } = require('sequelize');
 const { body, validationResult } = require('express-validator');
 const authMiddleware = require('../middleware/auth');
+const sequelize = require('../models/db');
 const {
+  Booking,
   createBooking,
   getBookingsByUserId,
   getBookingById,
   updateBookingStatus,
   updateBookingNotes,
-  cancelBooking,
-  deleteBooking,
 } = require('../models/booking');
-const { getAvailabilityById, updateSlots } = require('../models/availability');
+const { Availability, getAvailabilityById } = require('../models/availability');
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ router.post(
       .withMessage('Notes cannot exceed 500 characters'),
   ],
   async (req, res) => {
+    let transaction;
     try {
       // Check validation errors
       const errors = validationResult(req);
@@ -45,10 +47,16 @@ router.post(
 
       const { availabilityId, notes } = req.body;
       const userId = req.user.id;
+      transaction = await sequelize.transaction();
 
-      // Check if availability exists and has slots
-      const availability = await getAvailabilityById(availabilityId);
+      // Lock the availability row so only one request can modify slots at a time
+      const availability = await Availability.findByPk(availabilityId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
       if (!availability) {
+        await transaction.rollback();
         return res.status(404).json({
           success: false,
           message: 'Availability slot not found',
@@ -56,9 +64,29 @@ router.post(
       }
 
       if (availability.slotsAvailable <= 0) {
+        await transaction.rollback();
         return res.status(400).json({
           success: false,
           message: 'No slots available for this time slot',
+        });
+      }
+
+      const existingBooking = await Booking.findOne({
+        where: {
+          userId,
+          availabilityId,
+          status: {
+            [Op.ne]: 'cancelled',
+          },
+        },
+        transaction,
+      });
+
+      if (existingBooking) {
+        await transaction.rollback();
+        return res.status(409).json({
+          success: false,
+          message: 'You already have an active booking for this slot',
         });
       }
 
@@ -68,10 +96,16 @@ router.post(
         availabilityId,
         status: 'pending',
         notes: notes || null,
+        transaction,
       });
 
-      // Decrement available slots
-      await updateSlots(availabilityId, -1);
+      // Decrement available slots inside the same transaction
+      availability.slotsAvailable -= 1;
+      await availability.save({ transaction });
+
+      await transaction.commit();
+
+      const bookingAvailability = await getAvailabilityById(availabilityId);
 
       res.status(201).json({
         success: true,
@@ -82,20 +116,29 @@ router.post(
           notes: booking.notes,
           createdAt: booking.createdAt,
           availability: {
-            id: availability.id,
-            date: availability.date,
-            startTime: availability.startTime,
-            endTime: availability.endTime,
+            id: bookingAvailability.id,
+            date: bookingAvailability.date,
+            startTime: bookingAvailability.startTime,
+            endTime: bookingAvailability.endTime,
             service: {
-              id: availability.Service.id,
-              name: availability.Service.name,
-              duration: availability.Service.duration,
-              price: availability.Service.price,
+              id: bookingAvailability.Service.id,
+              name: bookingAvailability.Service.name,
+              duration: bookingAvailability.Service.duration,
+              price: bookingAvailability.Service.price,
             },
           },
         },
       });
     } catch (error) {
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
+      if (error.name === 'SequelizeUniqueConstraintError') {
+        return res.status(409).json({
+          success: false,
+          message: 'You already have an active booking for this slot',
+        });
+      }
       console.error('Error creating booking:', error);
       res.status(500).json({
         success: false,
@@ -183,7 +226,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 /**
  * PATCH /api/bookings/:id
  * Update booking status or notes
- * Body: { status: 'confirmed'|'cancelled'|'completed', notes: '...' }
+ * Body: { status: 'confirmed'|'completed', notes: '...' }
  */
 router.patch(
   '/:id',
@@ -191,8 +234,8 @@ router.patch(
   [
     body('status')
       .optional()
-      .isIn(['confirmed', 'cancelled', 'completed'])
-      .withMessage('Status must be confirmed, cancelled, or completed'),
+      .isIn(['confirmed', 'completed'])
+      .withMessage('Status must be confirmed or completed'),
     body('notes')
       .optional()
       .isLength({ max: 500 })
@@ -212,6 +255,13 @@ router.patch(
       const { id } = req.params;
       const { status, notes } = req.body;
       const userId = req.user.id;
+
+      if (status === 'cancelled') {
+        return res.status(400).json({
+          success: false,
+          message: 'Use DELETE /api/bookings/:id to cancel bookings so availability is restored correctly',
+        });
+      }
 
       if (!id) {
         return res.status(400).json({
@@ -269,6 +319,7 @@ router.patch(
  * Cancel a booking (set status to cancelled)
  */
 router.delete('/:id', authMiddleware, async (req, res) => {
+  let transaction;
   try {
     const { id } = req.params;
     const userId = req.user.id;
@@ -280,9 +331,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       });
     }
 
-    // Get booking and verify ownership
-    const booking = await getBookingById(id);
+    transaction = await sequelize.transaction();
+
+    // Lock booking row to prevent concurrent cancellation races
+    const booking = await Booking.findByPk(id, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
     if (!booking) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Booking not found',
@@ -290,17 +348,43 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     if (booking.userId !== userId) {
+      await transaction.rollback();
       return res.status(403).json({
         success: false,
         message: 'Unauthorized: You can only cancel your own bookings',
       });
     }
 
-    // Cancel booking (sets status to cancelled)
-    const cancelledBooking = await cancelBooking(id);
+    if (booking.status === 'cancelled') {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Booking is already cancelled',
+      });
+    }
 
-    // Restore the availability slot
-    await updateSlots(booking.availabilityId, 1);
+    const availability = await Availability.findByPk(booking.availabilityId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!availability) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Availability slot not found',
+      });
+    }
+
+    booking.status = 'cancelled';
+    await booking.save({ transaction });
+
+    availability.slotsAvailable += 1;
+    await availability.save({ transaction });
+
+    await transaction.commit();
+
+    const cancelledBooking = await getBookingById(id);
 
     res.status(200).json({
       success: true,
@@ -308,6 +392,9 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       booking: cancelledBooking,
     });
   } catch (error) {
+    if (transaction && !transaction.finished) {
+      await transaction.rollback();
+    }
     console.error('Error cancelling booking:', error);
     res.status(500).json({
       success: false,

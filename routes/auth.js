@@ -2,6 +2,12 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { User, createUser, findUserByEmail } = require('../models/user');
 const { generateTokens, verifyRefreshToken } = require('../utils/tokenUtils');
+const {
+  storeRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshTokenByRawToken,
+  revokeAllUserRefreshTokens,
+} = require('../models/refreshToken');
 
 const router = express.Router();
 
@@ -60,6 +66,14 @@ router.post(
 
       // Generate tokens
       const tokens = generateTokens(newUser);
+      const decodedRefresh = verifyRefreshToken(tokens.refreshToken);
+
+      await storeRefreshToken({
+        userId: newUser.id,
+        tokenId: tokens.refreshTokenId,
+        token: tokens.refreshToken,
+        expiresAt: new Date(decodedRefresh.exp * 1000),
+      });
 
       res.status(201).json({
         success: true,
@@ -127,6 +141,14 @@ router.post(
 
       // Generate tokens
       const tokens = generateTokens(user);
+      const decodedRefresh = verifyRefreshToken(tokens.refreshToken);
+
+      await storeRefreshToken({
+        userId: user.id,
+        tokenId: tokens.refreshTokenId,
+        token: tokens.refreshToken,
+        expiresAt: new Date(decodedRefresh.exp * 1000),
+      });
 
       res.status(200).json({
         success: true,
@@ -185,6 +207,50 @@ router.post('/refresh', [
 
       // Generate new tokens
       const tokens = generateTokens(user);
+      const nextDecoded = verifyRefreshToken(tokens.refreshToken);
+
+      const rotation = await rotateRefreshToken({
+        currentToken: refreshToken,
+        nextTokenId: tokens.refreshTokenId,
+        nextToken: tokens.refreshToken,
+        nextExpiresAt: new Date(nextDecoded.exp * 1000),
+      });
+
+      if (rotation.status === 'not_found') {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid refresh token',
+        });
+      }
+
+      if (rotation.status === 'expired') {
+        return res.status(401).json({
+          success: false,
+          message: 'Refresh token expired. Please login again.',
+        });
+      }
+
+      if (rotation.status === 'already_revoked') {
+        if (rotation.token.revokeReason === 'logout') {
+          return res.status(401).json({
+            success: false,
+            message: 'Refresh token has been revoked. Please login again.',
+          });
+        }
+
+        await revokeAllUserRefreshTokens(rotation.token.userId, 'refresh_token_reuse_detected');
+        return res.status(401).json({
+          success: false,
+          message: 'Refresh token reuse detected. Please login again.',
+        });
+      }
+
+      if (rotation.status !== 'rotated') {
+        return res.status(401).json({
+          success: false,
+          message: 'Refresh token is no longer valid. Please login again.',
+        });
+      }
 
       res.status(200).json({
         success: true,
@@ -207,6 +273,41 @@ router.post('/refresh', [
   } catch (error) {
     console.error('Refresh token error:', error);
     res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /auth/logout
+ * Revoke refresh token
+ * Body: { refreshToken }
+ */
+router.post('/logout', [
+  body('refreshToken').notEmpty().withMessage('Refresh token is required'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: errors.array(),
+      });
+    }
+
+    const { refreshToken } = req.body;
+    await revokeRefreshTokenByRawToken(refreshToken, 'logout');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return res.status(500).json({
       success: false,
       message: 'Internal server error',
       error: error.message,

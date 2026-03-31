@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const protectedRoutes = require('./routes/protected');
 const servicesRoutes = require('./routes/services');
 const bookingRoutes = require('./routes/bookings');
+const { authLimiter, bookingLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 
@@ -29,8 +30,8 @@ app.use(
 // BODY PARSING MIDDLEWARE
 // ============================================================================
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ============================================================================
 // REQUEST LOGGING MIDDLEWARE
@@ -51,13 +52,13 @@ app.get('/', (req, res) => {
 });
 
 // Auth routes (register, login, refresh)
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 
 // Public service routes (browse services and availability)
 app.use('/api/services', servicesRoutes);
 
 // Protected booking routes (require authentication)
-app.use('/api/bookings', bookingRoutes);
+app.use('/api/bookings', bookingLimiter, bookingRoutes);
 
 // Protected routes (require authentication)
 app.use('/api/protected', protectedRoutes);
@@ -78,6 +79,13 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
+
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Request body too large. Maximum payload size is 1MB.',
+    });
+  }
 
   // Default error response
   const statusCode = err.statusCode || 500;

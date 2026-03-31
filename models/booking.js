@@ -39,6 +39,17 @@ Booking.init(
     modelName: 'Booking',
     tableName: 'bookings',
     timestamps: true,
+    indexes: [
+      {
+        unique: true,
+        fields: ['userId', 'availabilityId'],
+        where: {
+          status: {
+            [Sequelize.Op.ne]: 'cancelled',
+          },
+        },
+      },
+    ],
   }
 );
 
@@ -49,14 +60,20 @@ Booking.belongsTo(Availability, { foreignKey: 'availabilityId' });
 /**
  * Create a new booking
  */
-async function createBooking({ userId, availabilityId, status = 'pending', notes = null }) {
+async function createBooking({
+  userId,
+  availabilityId,
+  status = 'pending',
+  notes = null,
+  transaction = null,
+}) {
   try {
     return await Booking.create({
       userId,
       availabilityId,
       status,
       notes,
-    });
+    }, transaction ? { transaction } : undefined);
   } catch (error) {
     throw error;
   }

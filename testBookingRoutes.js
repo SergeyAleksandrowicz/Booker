@@ -1,4 +1,8 @@
 const axios = require('axios');
+const { createUser } = require('./models/user');
+const { createService } = require('./models/service');
+const { createAvailability } = require('./models/availability');
+const { generateAccessToken } = require('./utils/tokenUtils');
 
 const BASE_URL = 'http://localhost:4000/api';
 
@@ -8,8 +12,7 @@ const testPassword = 'Password123!';
 
 let testUserId = null;
 let accessToken = null;
-let refreshToken = null;
-let testAvailabilityId = null;
+let testAvailabilityIds = [];
 let testBookingId = null;
 
 const log = (title, data) => {
@@ -35,25 +38,53 @@ const logError = (title, error) => {
 
 const testFlow = async () => {
   try {
-    // 1. Register new user
-    log('STEP 1: Register new user');
-    let response = await axios.post(`${BASE_URL}/auth/register`, {
-      email: testEmail,
-      password: testPassword,
-      passwordConfirm: testPassword,
-    });
-    testUserId = response.data.user.id;
-    console.log(`User registered with ID: ${testUserId}`);
+    let response;
 
-    // 2. Login
-    log('STEP 2: Login and get tokens');
-    response = await axios.post(`${BASE_URL}/auth/login`, {
+    // 1. Create test user directly and mint access token
+    log('STEP 1: Create test user and access token');
+    const createdUser = await createUser({
       email: testEmail,
       password: testPassword,
     });
-    accessToken = response.data.accessToken;
-    refreshToken = response.data.refreshToken;
-    console.log('Access token obtained');
+
+    if (!createdUser || createdUser.error) {
+      throw new Error(`Failed to create test user: ${createdUser?.error || 'unknown error'}`);
+    }
+
+    testUserId = createdUser.id;
+    accessToken = generateAccessToken({ id: createdUser.id, email: createdUser.email });
+    console.log(`User created with ID: ${testUserId}`);
+    console.log('Access token generated');
+
+    // 2. Seed dedicated service and two availability slots with guaranteed capacity
+    log('STEP 2: Seed dedicated test service and availability');
+    const seededServiceRecord = await createService({
+      name: `Booking Route Test Service ${Date.now()}`,
+      description: 'Service used by booking route test suite',
+      duration: 30,
+      price: 39.99,
+      active: true,
+    });
+
+    const slot1 = await createAvailability({
+      serviceId: seededServiceRecord.id,
+      date: '2026-06-01',
+      startTime: '10:00:00',
+      endTime: '10:30:00',
+      slotsAvailable: 1,
+    });
+
+    const slot2 = await createAvailability({
+      serviceId: seededServiceRecord.id,
+      date: '2026-06-01',
+      startTime: '11:00:00',
+      endTime: '11:30:00',
+      slotsAvailable: 1,
+    });
+
+    testAvailabilityIds = [slot1.id, slot2.id];
+    console.log(`Seeded service ID: ${seededServiceRecord.id}`);
+    console.log(`Seeded availability IDs: ${testAvailabilityIds.join(', ')}`);
 
     const headers = { Authorization: `Bearer ${accessToken}` };
 
@@ -66,9 +97,17 @@ const testFlow = async () => {
       return;
     }
 
-    // 4. Get availability for first service
+    // 4. Get availability for seeded service
     log('STEP 4: Get availability slots for service');
-    const serviceId = response.data.services[0].id;
+    const seededService = response.data.services.find((service) =>
+      service.name.startsWith('Booking Route Test Service')
+    );
+
+    if (!seededService) {
+      throw new Error('Failed to find seeded service through public services endpoint.');
+    }
+
+    const serviceId = seededService.id;
     console.log(`Getting availability for service ID: ${serviceId}`);
     response = await axios.get(`${BASE_URL}/services/${serviceId}/availability`);
     console.log(`Found ${response.data.availability.length} available slots`);
@@ -78,15 +117,21 @@ const testFlow = async () => {
       return;
     }
 
-    testAvailabilityId = response.data.availability[0].id;
-    console.log(`Selected availability slot ID: ${testAvailabilityId}`);
+    const availableSlots = response.data.availability.filter((slot) => slot.slotsAvailable > 0);
+    if (availableSlots.length === 0) {
+      throw new Error('No availability slots with capacity found for seeded service.');
+    }
+
+    const firstAvailabilityId = availableSlots[0].id;
+    const secondAvailabilityId = availableSlots[1] ? availableSlots[1].id : null;
+    console.log(`Selected first availability slot ID: ${firstAvailabilityId}`);
 
     // 5. Create booking (protected)
     log('STEP 5: Create a new booking (authenticated)');
     response = await axios.post(
       `${BASE_URL}/bookings`,
       {
-        availabilityId: testAvailabilityId,
+        availabilityId: firstAvailabilityId,
         notes: 'Test booking from automated test script',
       },
       { headers }
@@ -131,9 +176,8 @@ const testFlow = async () => {
     console.log(`New notes: ${response.data.booking.notes}`);
 
     // 10. Create another booking to test cancellation
-    if (response.data.availability && response.data.availability.length > 1) {
+    if (secondAvailabilityId) {
       log('STEP 10: Create second booking for cancellation test');
-      const secondAvailabilityId = response.data.availability[1].id;
       response = await axios.post(
         `${BASE_URL}/bookings`,
         {

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 
 /**
  * Generate an access token (short-lived)
@@ -19,11 +20,28 @@ const generateAccessToken = (user) => {
  * @returns {string} Signed JWT refresh token
  */
 const generateRefreshToken = (user) => {
+  const tokenId = randomUUID();
   return jwt.sign(
-    { id: user.id, email: user.email },
+    { id: user.id, email: user.email, tokenId },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d' }
   );
+};
+
+/**
+ * Generate refresh token and return both token and tokenId (jti-like claim)
+ * @param {Object} user - User object with id and email
+ * @returns {{token: string, tokenId: string}}
+ */
+const generateRefreshTokenWithId = (user) => {
+  const tokenId = randomUUID();
+  const token = jwt.sign(
+    { id: user.id, email: user.email, tokenId },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d' }
+  );
+
+  return { token, tokenId };
 };
 
 /**
@@ -52,15 +70,19 @@ const verifyRefreshToken = (token) => {
  * @returns {Object} Object containing accessToken and refreshToken
  */
 const generateTokens = (user) => {
+  const refresh = generateRefreshTokenWithId(user);
+
   return {
     accessToken: generateAccessToken(user),
-    refreshToken: generateRefreshToken(user),
+    refreshToken: refresh.token,
+    refreshTokenId: refresh.tokenId,
   };
 };
 
 module.exports = {
   generateAccessToken,
   generateRefreshToken,
+  generateRefreshTokenWithId,
   verifyAccessToken,
   verifyRefreshToken,
   generateTokens,
